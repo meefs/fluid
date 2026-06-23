@@ -319,6 +319,13 @@
   }
   .textfield::placeholder{color:var(--soft)}
   .textfield:focus{border-color:var(--ink);box-shadow:0 0 0 2px var(--line)}
+  .fontgrid{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .fontbtn{
+    font-size:15px;line-height:1;color:var(--ink);background:transparent;
+    border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer;
+  }
+  .fontbtn:hover{border-color:var(--ink)}
+  .fontbtn.on{border-color:var(--ink);background:var(--ink);color:var(--ink-c)}
   .exgroups .row{margin-bottom:2px}
   .moresizes{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
   .moresizes>summary{list-style:none;cursor:pointer;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--soft);user-select:none;-webkit-user-select:none}
@@ -757,6 +764,7 @@
   <section>
     <div class="sec-title">Text — your words in living colour</div>
     <input id="textInput" class="textfield" type="text" maxlength="48" placeholder="Type a word or name…" aria-label="Text to fill with the pattern" autocomplete="off" spellcheck="false">
+    <div id="fontGrid" class="fontgrid" role="group" aria-label="Font"></div>
     <p class="cnote" style="margin:8px 0 0">Fills the letters with the living pattern — clear to turn off. Tip: pick a wide frame in Size for a banner.</p>
     <div class="row gap" style="margin-top:10px;align-items:center">
       <span class="exGroupLabel" style="margin:0 2px 0 0">Background</span>
@@ -1017,7 +1025,7 @@ var state = {
   hasTex:0, texAspect:1,
   split:0,
   panX:0, panY:0,
-  text:'', maskBg:'#0d0d10',
+  text:'', maskBg:'#0d0d10', font:0,
   cols: cloneStops(PALETTES_RGB[0]),
   userSource:false,
   playing:false
@@ -1540,6 +1548,19 @@ if (gl){
   gl.uniform1i(U.u_mask, 2);
   gl.activeTexture(gl.TEXTURE0);
 }
+/* curated display fonts — system stacks (no external CDN; CSP-safe), Mac-first with
+   cross-platform fallbacks. Each renders the brand text into the mask. */
+var TEXT_FONTS = [
+  { label:'Heavy',   stack:'"Arial Black","Helvetica Neue",Impact,sans-serif', weight:'900' },
+  { label:'Impact',  stack:'Impact,Haettenschweiler,"Arial Narrow",sans-serif', weight:'400' },
+  { label:'Futura',  stack:'Futura,"Century Gothic","Avenir Next",sans-serif', weight:'700' },
+  { label:'Didot',   stack:'Didot,"Bodoni 72","Playfair Display",Georgia,serif', weight:'700' },
+  { label:'Serif',   stack:'Baskerville,"Hoefler Text",Georgia,serif', weight:'700' },
+  { label:'Mono',    stack:'"SF Mono",Menlo,"Courier New",monospace', weight:'700' },
+  { label:'Script',  stack:'"Snell Roundhand","Brush Script MT",cursive', weight:'700' },
+  { label:'Chalk',   stack:'Chalkduster,"Comic Sans MS",cursive', weight:'400' },
+  { label:'Engrave', stack:'Copperplate,"Copperplate Gothic Bold",serif', weight:'700', upper:true }
+];
 function maskActive(){ return !!(state.text && state.text.replace(/\s/g, '')); }
 function updateMaskTex(){
   if (!gl || !maskTex){ return; }
@@ -1555,9 +1576,11 @@ function updateMaskTex(){
   x.fillStyle = '#000'; x.fillRect(0, 0, W, H);
   x.fillStyle = '#fff';
   x.textAlign = 'center'; x.textBaseline = 'middle';
-  var lines = state.text.split('\n');
+  var F = TEXT_FONTS[state.font] || TEXT_FONTS[0];
+  var raw = F.upper ? state.text.toUpperCase() : state.text;
+  var lines = raw.split('\n');
   var maxW = W * 0.86, maxH = H * 0.80, i;
-  function setFont(s){ x.font = '900 ' + s + 'px "Arial Black", "Helvetica Neue", system-ui, sans-serif'; }
+  function setFont(s){ x.font = F.weight + ' ' + s + 'px ' + F.stack; }
   var fs = H * 0.6; setFont(fs);
   var widest = 1; for (i = 0; i < lines.length; i++){ widest = Math.max(widest, x.measureText(lines[i] || ' ').width); }
   fs = fs * (maxW / widest); setFont(fs);                      /* fit width */
@@ -2071,6 +2094,28 @@ function setMaskBg(hex){ state.maskBg = hex; if (maskBgInput){ maskBgInput.value
   var bd = document.getElementById('maskBgDark'), bl = document.getElementById('maskBgLight');
   if (bd){ bd.addEventListener('click', function(){ setMaskBg('#0d0d10'); }); }
   if (bl){ bl.addEventListener('click', function(){ setMaskBg('#f4f4ef'); }); }
+})();
+(function(){
+  var grid = document.getElementById('fontGrid');
+  if (!grid){ return; }
+  for (var i = 0; i < TEXT_FONTS.length; i++){
+    (function(idx){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'fontbtn' + (idx === state.font ? ' on' : '');
+      b.textContent = TEXT_FONTS[idx].label;
+      b.style.fontFamily = TEXT_FONTS[idx].stack;   /* each button previews its own font */
+      b.style.fontWeight = TEXT_FONTS[idx].weight;
+      b.setAttribute('aria-pressed', idx === state.font ? 'true' : 'false');
+      b.addEventListener('click', function(){
+        state.font = idx;
+        var all = grid.querySelectorAll('.fontbtn'), k;
+        for (k = 0; k < all.length; k++){ all[k].classList.toggle('on', k === idx); all[k].setAttribute('aria-pressed', k === idx ? 'true' : 'false'); }
+        updateMaskTex();
+      });
+      grid.appendChild(b);
+    })(i);
+  }
 })();
 bindSlider('mix', 'mix');
 
