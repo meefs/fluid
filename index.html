@@ -758,6 +758,12 @@
     <div class="sec-title">Text — your words in living colour</div>
     <input id="textInput" class="textfield" type="text" maxlength="48" placeholder="Type a word or name…" aria-label="Text to fill with the pattern" autocomplete="off" spellcheck="false">
     <p class="cnote" style="margin:8px 0 0">Fills the letters with the living pattern — clear to turn off. Tip: pick a wide frame in Size for a banner.</p>
+    <div class="row gap" style="margin-top:10px;align-items:center">
+      <span class="exGroupLabel" style="margin:0 2px 0 0">Background</span>
+      <input class="swatch" id="maskBgInput" type="color" value="#0d0d10" aria-label="Text background colour">
+      <button type="button" id="maskBgDark">Dark</button>
+      <button type="button" id="maskBgLight">Light</button>
+    </div>
   </section>
 
   <section>
@@ -1011,7 +1017,7 @@ var state = {
   hasTex:0, texAspect:1,
   split:0,
   panX:0, panY:0,
-  text:'',
+  text:'', maskBg:'#0d0d10',
   cols: cloneStops(PALETTES_RGB[0]),
   userSource:false,
   playing:false
@@ -1889,7 +1895,8 @@ function render(k, tgt){
   gl.uniform1f(U.u_rec, recHiRes ? 1 : 0);
   if (maskTex){ gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, maskTex); gl.uniform1i(U.u_mask, 2); gl.activeTexture(gl.TEXTURE0); }
   gl.uniform1f(U.u_hasMask, maskActive() ? 1.0 : 0.0);
-  gl.uniform3f(U.u_maskBg, 0.05, 0.05, 0.06);
+  var mbg = hexToRgb01(state.maskBg || '#0d0d10');
+  gl.uniform3f(U.u_maskBg, mbg[0], mbg[1], mbg[2]);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   if (tgt){ return; }            /* offscreen thumbnail render: no glow, FBO stays bound for read-back */
   if (!exporting && !recHiRes && glowVisible()){
@@ -2054,6 +2061,17 @@ if (textInput){
   textInput.value = state.text || '';
   textInput.addEventListener('input', function(){ state.text = textInput.value; updateMaskTex(); });
 }
+var maskBgInput = document.getElementById('maskBgInput');
+if (maskBgInput){
+  maskBgInput.value = state.maskBg;
+  maskBgInput.addEventListener('input', function(){ state.maskBg = maskBgInput.value; requestRender(); });
+}
+function setMaskBg(hex){ state.maskBg = hex; if (maskBgInput){ maskBgInput.value = hex; } requestRender(); }
+(function(){
+  var bd = document.getElementById('maskBgDark'), bl = document.getElementById('maskBgLight');
+  if (bd){ bd.addEventListener('click', function(){ setMaskBg('#0d0d10'); }); }
+  if (bl){ bl.addEventListener('click', function(){ setMaskBg('#f4f4ef'); }); }
+})();
 bindSlider('mix', 'mix');
 
 /* ---------- rotary knobs: a tactile dial layered over the hidden range input ----------
