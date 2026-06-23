@@ -311,6 +311,14 @@
   .swatch::-moz-color-swatch{border:none;border-radius:5px}
   .swatchRow.disabled{opacity:.32;pointer-events:none}
   .cnote{font-size:9px;letter-spacing:.10em;color:var(--soft);margin-top:8px;min-height:11px}
+  .textfield{
+    width:100%;box-sizing:border-box;margin-top:2px;
+    font-family:inherit;font-size:13px;letter-spacing:.04em;
+    color:var(--ink);background:var(--bg);border:1px solid var(--ink);
+    border-radius:8px;padding:9px 11px;outline:none;
+  }
+  .textfield::placeholder{color:var(--soft)}
+  .textfield:focus{border-color:var(--ink);box-shadow:0 0 0 2px var(--line)}
   .exgroups .row{margin-bottom:2px}
   .moresizes{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
   .moresizes>summary{list-style:none;cursor:pointer;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--soft);user-select:none;-webkit-user-select:none}
@@ -747,6 +755,12 @@
   </section>
 
   <section>
+    <div class="sec-title">Text — your words in living colour</div>
+    <input id="textInput" class="textfield" type="text" maxlength="48" placeholder="Type a word or name…" aria-label="Text to fill with the pattern" autocomplete="off" spellcheck="false">
+    <p class="cnote" style="margin:8px 0 0">Fills the letters with the living pattern — clear to turn off. Tip: pick a wide frame in Size for a banner.</p>
+  </section>
+
+  <section>
     <div class="sec-title">01 — Size</div>
     <div class="ardial">
       <input id="arSlider" type="range" min="0" max="5" step="1" value="2" aria-label="Aspect ratio">
@@ -997,6 +1011,7 @@ var state = {
   hasTex:0, texAspect:1,
   split:0,
   panX:0, panY:0,
+  text:'',
   cols: cloneStops(PALETTES_RGB[0]),
   userSource:false,
   playing:false
@@ -1037,6 +1052,9 @@ var FSRC = [
   'uniform int   u_field;',
   'uniform int   u_screen;',
   'uniform sampler2D u_glyph;',
+  'uniform sampler2D u_mask;',    /* text/logo mask — field shows inside white, u_maskBg outside */
+  'uniform float u_hasMask;',
+  'uniform vec3  u_maskBg;',
   'uniform vec2  u_pan;',
   'uniform vec2  u_mouse;',
   'uniform float u_mouseAmt;',
@@ -1384,6 +1402,12 @@ var FSRC = [
   '  col += gr * u_grain * mix(1.0, 0.28, u_rec);',
   '  col *= 1.0 - 0.22 * dot(uv, uv);',
   '',
+  '  /* 7 - text/logo mask: the living field fills the letters, clean bg outside */',
+  '  if (u_hasMask > 0.5){',
+  '    float mk = texture2D(u_mask, vec2(gl_FragCoord.x / u_res.x, 1.0 - gl_FragCoord.y / u_res.y)).r;',
+  '    col = mix(u_maskBg, col, smoothstep(0.42, 0.58, mk));',
+  '  }',
+  '',
   '  gl_FragColor = vec4(col, 1.0);',
   '}'
 ].join('\n');
@@ -1451,7 +1475,7 @@ if (gl){
 
   ['u_res','u_time','u_seed','u_scale','u_warp','u_pixel','u_dots','u_dot','u_dither','u_grain',
    'u_pal','u_c0','u_c1','u_c2','u_c3','u_tex','u_hasTex','u_texAspect','u_liq','u_mix','u_split',
-   'u_field','u_screen','u_glyph','u_pan','u_mouse','u_mouseAmt','u_rec'].forEach(function(n){
+   'u_field','u_screen','u_glyph','u_pan','u_mouse','u_mouseAmt','u_rec','u_mask','u_hasMask','u_maskBg'].forEach(function(n){
     U[n] = gl.getUniformLocation(prog, n);
   });
 
@@ -1493,6 +1517,54 @@ if (gl){
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, buildGlyphAtlas());
   gl.uniform1i(U.u_glyph, 1);
   gl.activeTexture(gl.TEXTURE0);
+}
+
+/* text/logo mask on texture unit 2: render the user's words to a 2D canvas (white on
+   black, auto-fit to the frame) and upload it; the shader fills the white with the field.
+   Rebuilt on text or aspect change; sampled by UV so resolution changes need no rebuild. */
+var maskTex = null, maskCanvas = null, maskCtx = null, maskAr = 0;
+if (gl){
+  maskTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, maskTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.uniform1i(U.u_mask, 2);
+  gl.activeTexture(gl.TEXTURE0);
+}
+function maskActive(){ return !!(state.text && state.text.replace(/\s/g, '')); }
+function updateMaskTex(){
+  if (!gl || !maskTex){ return; }
+  var ar = canvas.width / canvas.height; if (!ar || !isFinite(ar)){ ar = 1; }
+  maskAr = ar;
+  if (!maskActive()){ requestRender(); return; }
+  var LONG = 2048;
+  var W = ar >= 1 ? LONG : Math.round(LONG * ar);
+  var H = ar >= 1 ? Math.round(LONG / ar) : LONG;
+  if (!maskCanvas){ maskCanvas = document.createElement('canvas'); maskCtx = null; }
+  if (maskCanvas.width !== W || maskCanvas.height !== H){ maskCanvas.width = W; maskCanvas.height = H; maskCtx = null; }
+  var x = maskCtx || (maskCtx = maskCanvas.getContext('2d'));
+  x.fillStyle = '#000'; x.fillRect(0, 0, W, H);
+  x.fillStyle = '#fff';
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  var lines = state.text.split('\n');
+  var maxW = W * 0.86, maxH = H * 0.80, i;
+  function setFont(s){ x.font = '900 ' + s + 'px "Arial Black", "Helvetica Neue", system-ui, sans-serif'; }
+  var fs = H * 0.6; setFont(fs);
+  var widest = 1; for (i = 0; i < lines.length; i++){ widest = Math.max(widest, x.measureText(lines[i] || ' ').width); }
+  fs = fs * (maxW / widest); setFont(fs);                      /* fit width */
+  var totalH = lines.length * fs * 1.08;
+  if (totalH > maxH){ fs = fs * (maxH / totalH); setFont(fs); } /* then constrain height */
+  var lh = fs * 1.08, y0 = H / 2 - (lines.length - 1) * lh / 2;
+  for (i = 0; i < lines.length; i++){ x.fillText(lines[i], W / 2, y0 + i * lh); }
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, maskTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, maskCanvas);
+  gl.activeTexture(gl.TEXTURE0);
+  requestRender();
 }
 
 var texScratch = null;
@@ -1758,6 +1830,11 @@ function resize(){
     canvas.width = w; canvas.height = h;
     requestRender();              /* a resized buffer must be redrawn */
   }
+  /* the text mask is built at the canvas aspect — rebuild only when that aspect changes */
+  if (gl && maskTex && maskActive()){
+    var car = canvas.width / canvas.height;
+    if (Math.abs(car - maskAr) > 0.002){ updateMaskTex(); }
+  }
 }
 canvas.addEventListener('webglcontextlost', function(e){
   e.preventDefault();
@@ -1810,6 +1887,9 @@ function render(k, tgt){
   gl.uniform2f(U.u_mouse, mouse.x, mouse.y);
   gl.uniform1f(U.u_mouseAmt, exporting ? 0 : mouse.amt);
   gl.uniform1f(U.u_rec, recHiRes ? 1 : 0);
+  if (maskTex){ gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, maskTex); gl.uniform1i(U.u_mask, 2); gl.activeTexture(gl.TEXTURE0); }
+  gl.uniform1f(U.u_hasMask, maskActive() ? 1.0 : 0.0);
+  gl.uniform3f(U.u_maskBg, 0.05, 0.05, 0.06);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   if (tgt){ return; }            /* offscreen thumbnail render: no glow, FBO stays bound for read-back */
   if (!exporting && !recHiRes && glowVisible()){
@@ -1969,6 +2049,11 @@ bindSlider('pixel', 'pixel');
 bindSlider('dot', 'dot');
 bindSlider('thresh', 'thresh');
 bindSlider('liq', 'liq');
+var textInput = document.getElementById('textInput');
+if (textInput){
+  textInput.value = state.text || '';
+  textInput.addEventListener('input', function(){ state.text = textInput.value; updateMaskTex(); });
+}
 bindSlider('mix', 'mix');
 
 /* ---------- rotary knobs: a tactile dial layered over the hidden range input ----------
