@@ -3822,6 +3822,16 @@ function pickMime(){
   }
   return '';
 }
+/* iOS 16.4+ has WebCodecs, but our hand-written MP4 muxer omits boxes (ctts for B-frames,
+   colr) that iOS Photos requires — so a recorded clip opens the share sheet yet "Save Video"
+   silently fails. Route iOS through MediaRecorder instead: Apple's own H.264 encoder + the
+   explicit-codec/defrag path produces a clip Photos accepts. (iPadOS 13+ masquerades as a
+   Mac, so also check touch points.) */
+function isiOS(){
+  var ua = navigator.userAgent || '', plat = navigator.platform || '';
+  return /iP(hone|od|ad)/.test(plat) || /iPhone|iPad|iPod/.test(ua) ||
+    (/Mac/.test(plat) && navigator.maxTouchPoints > 1);
+}
 function fmtClock(ms){
   var s = Math.floor(ms / 1000);
   var m = Math.floor(s / 60);
@@ -3889,8 +3899,9 @@ function toggleRecording(){
   var safe = recSize(ar);
   var fallbackSafe = recFallbackSize(ar);
   /* Prefer WebCodecs: it re-encodes via the platform's hardware H.264 (VideoToolbox on a
-     Mac) — a clean bitstream X accepts. MediaRecorder's bitstream is rejected by X web. */
-  if (window.VideoEncoder && window.VideoFrame){
+     Mac) — a clean bitstream X accepts. MediaRecorder's bitstream is rejected by X web.
+     EXCEPT on iOS, where our muxer's output won't save to Photos — see isiOS(). */
+  if (window.VideoEncoder && window.VideoFrame && !isiOS()){
     /* negotiate: Safari may reject latencyMode/hwAccel in isConfigSupported, so try the
        richest config first and fall back through simpler ones before MediaRecorder. */
     var common = { width:safe.w, height:safe.h, bitrate:REC_BITRATE, framerate:REC_FPS, avc:{ format:'avc' } };
