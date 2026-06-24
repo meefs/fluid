@@ -213,6 +213,13 @@
   }
   .embedBody code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10px;color:var(--ink)}
   #copyEmbed{margin-top:8px;width:100%}
+  .embedTabs{display:flex;gap:4px;margin-bottom:8px}
+  .embedTab{
+    flex:1;font-family:inherit;font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:6px;
+    padding:6px 8px;cursor:pointer;
+  }
+  .embedTab.on{background:var(--ink);color:var(--ink-c);border-color:var(--ink)}
   .designDockHead{
     display:flex;align-items:center;gap:10px;padding:10px 10px 8px;
     border-bottom:1px solid var(--line);
@@ -702,8 +709,12 @@
           </div>
           <div class="embedBody">
             <p class="cnote" style="margin:0 0 8px">A live background of your current piece — one tag, nothing to host.</p>
+            <div class="embedTabs" role="tablist">
+              <button class="embedTab on" type="button" data-etab="code" role="tab" aria-selected="true">Code</button>
+              <button class="embedTab" type="button" data-etab="claude" role="tab" aria-selected="false">For Claude</button>
+            </div>
             <pre id="embedSnippet" class="embedCode"></pre>
-            <button id="copyEmbed" type="button">Copy code</button>
+            <button id="copyEmbed" type="button">Copy</button>
             <p class="cnote" style="margin:8px 0 0">Or <code>npm i fluid-bg</code> &middot; React <code>&lt;FluidBg/&gt;</code></p>
           </div>
         </div>
@@ -3318,25 +3329,47 @@ document.addEventListener('pointerdown', function(e){
 /* ---------- "Use on your site" embed-code popover ---------- */
 var embedChip = document.getElementById('embedChip');
 var embedDock = document.getElementById('embedDock');
+var embedTab = 'code';
 function embedSnippetText(){
   /* split the closing script tag so it doesn't end THIS inline script */
   return '<script src="https://cdn.jsdelivr.net/npm/fluid-bg"><\/script>\n<fluid-bg fixed hash="' + buildHash(0) + '"></fluid-bg>';
 }
+/* a ready-to-paste prompt for Claude Code / Cursor, with the snippet baked in */
+function embedClaudeText(){
+  return 'Build a single-file index.html landing page that uses the "fluid-bg" npm package for a live, animated generative background. fluid-bg is a web component (no build step) — add the background with exactly these two tags:\n\n'
+    + embedSnippetText() + '\n\n'
+    + 'Then put the page content — a hero headline, a line of subtext, and a CTA button — on top of it with position:relative and z-index:1. The <fluid-bg> tag renders a live Fluid background served from fluid.krackeddevs.com, so there is nothing to self-host. Note: fluid-bg is a brand-new npm package, so if it is not in your training data, use the CDN snippet above exactly as written (or run "npm i fluid-bg" and add import "fluid-bg"). Open the page in my browser when you are done.';
+}
+function activeEmbedText(){ return embedTab === 'claude' ? embedClaudeText() : embedSnippetText(); }
+function renderEmbed(){
+  var pre = document.getElementById('embedSnippet');
+  if (pre){ pre.textContent = activeEmbedText(); }   /* bake the current piece in */
+  if (embedDock){
+    var tabs = embedDock.querySelectorAll('.embedTab'), i;
+    for (i = 0; i < tabs.length; i++){
+      var on = tabs[i].getAttribute('data-etab') === embedTab;
+      tabs[i].classList.toggle('on', on);
+      tabs[i].setAttribute('aria-selected', on ? 'true' : 'false');
+    }
+  }
+}
 function setEmbedDock(open){
   if (!embedDock){ return; }
-  if (open){
-    setDesignDock(false);                       /* only one dock open at a time */
-    var pre = document.getElementById('embedSnippet');
-    if (pre){ pre.textContent = embedSnippetText(); }   /* bake the current piece in */
-  }
+  if (open){ setDesignDock(false); renderEmbed(); }   /* only one dock open at a time */
   embedDock.className = open ? 'open' : '';
   if (embedChip){ embedChip.setAttribute('aria-expanded', open ? 'true' : 'false'); }
 }
 if (embedChip && embedDock){
   embedChip.addEventListener('click', function(){ setEmbedDock(embedDock.className !== 'open'); });
   document.getElementById('closeEmbed').addEventListener('click', function(){ setEmbedDock(false); });
+  embedDock.querySelector('.embedTabs').addEventListener('click', function(e){
+    var b = e.target.closest('.embedTab'); if (!b){ return; }
+    embedTab = b.getAttribute('data-etab'); renderEmbed();
+  });
   document.getElementById('copyEmbed').addEventListener('click', function(){
-    copyText(embedSnippetText(), 'EMBED CODE COPIED — paste it into any page', 'COPY FAILED — tap again to retry');
+    copyText(activeEmbedText(),
+      embedTab === 'claude' ? 'PROMPT COPIED — paste into Claude Code / Cursor' : 'EMBED CODE COPIED — paste into any page',
+      'COPY FAILED — tap again to retry');
   });
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape'){ setEmbedDock(false); } });
   document.addEventListener('pointerdown', function(e){
