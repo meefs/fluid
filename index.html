@@ -2580,17 +2580,64 @@ var GOLDEN = 0.6180339887498949;
 var seedPhase = Math.random();
 var recentKeys = [];           /* rolling hash of recent looks — the next shuffle avoids them all */
 var lastField = -1;
+/* #1 shuffle-bag: deal engines from a reshuffling deck, so coverage is provably even
+   (not just statistically) and never the same engine twice across a refill boundary. */
+var fieldBag = [];
+function nextFieldFromBag(){
+  if (fieldBag.length === 0){
+    var i, j, k, t;
+    for (i = 0; i < 13; i++){ fieldBag.push(i); }
+    for (j = fieldBag.length - 1; j > 0; j--){                 /* Fisher–Yates shuffle */
+      k = Math.floor(Math.random() * (j + 1));
+      t = fieldBag[j]; fieldBag[j] = fieldBag[k]; fieldBag[k] = t;
+    }
+    if (fieldBag[fieldBag.length - 1] === lastField){          /* don't repeat across the seam */
+      t = fieldBag[fieldBag.length - 1]; fieldBag[fieldBag.length - 1] = fieldBag[0]; fieldBag[0] = t;
+    }
+  }
+  return fieldBag.pop();
+}
+/* #2 per-engine ranges [scaleLo, scaleHi, warpLo, warpHi]: each engine reads warp/scale
+   differently, so one global range made duds — these sit in each engine's sweet spot. */
+var FIELD_TUNE = [
+  [1.0, 3.0, 1.5, 8.0],  /* noise     */
+  [1.0, 2.8, 2.0, 7.0],  /* flow      */
+  [1.2, 3.0, 1.5, 8.0],  /* cellular  */
+  [1.0, 2.8, 2.0, 8.0],  /* gyroid    */
+  [0.8, 2.2, 1.5, 6.0],  /* truchet   */
+  [1.0, 2.5, 2.0, 8.0],  /* interfere */
+  [1.0, 2.5, 2.0, 9.0],  /* kaleido   */
+  [1.0, 3.0, 1.5, 7.0],  /* lines     */
+  [1.0, 2.5, 1.5, 6.0],  /* grid      */
+  [1.0, 2.5, 2.0, 8.0],  /* golden    */
+  [1.0, 2.8, 3.0, 9.0],  /* smoke     */
+  [1.0, 2.5, 2.0, 9.0],  /* crystal   */
+  [0.8, 2.2, 1.5, 6.0]   /* honeycomb */
+];
+/* #3 procedural palette: a harmonious dark->light 4-stop ramp around a random hue (analogous
+   or complementary), so the shuffle occasionally invents a colourway instead of a preset. */
+function hsl2rgb01(h, s, l){
+  function f(n){ var k = (n + h * 12.0) % 12.0; var a = s * Math.min(l, 1.0 - l);
+    return l - a * Math.max(-1.0, Math.min(k - 3.0, Math.min(9.0 - k, 1.0))); }
+  return [f(0.0), f(8.0), f(4.0)];
+}
+function randomGradient(){
+  var h = Math.random();
+  var dir = Math.random() < 0.5 ? 1 : -1;
+  var dh = (Math.random() < 0.5 ? 0.08 : 0.5) * dir;          /* analogous or complementary */
+  function st(o, s, l){ return hsl2rgb01(((h + o) % 1 + 1) % 1, s, l); }
+  return [ st(0, 0.55, 0.10), st(dh * 0.4, 0.70, 0.32), st(dh, 0.85, 0.55), st(dh * 1.3, 0.45, 0.86) ];
+}
 /* a fresh, truly varied random pattern (no image) — boot + Shuffle/Randomize */
 function randomPattern(){
   var rnd = Math.random;
+  state.field = nextFieldFromBag();                 /* #1 even rotation, no consecutive repeat */
   var key, tries = 0;
+  var useCustom = rnd() < 0.17;                     /* #3 decided once (not inside the loop) -> exactly ~1 in 6 */
+  if (useCustom){ state.cols = randomGradient(); }
   do {
-    state.field = Math.floor(rnd() * 13);             /* any of the 13 engines, evenly */
-    state.pal = Math.floor(rnd() * 8);                /* any of the 8 palettes */
-    state.scale = 1.0 + rnd() * 2.2;                  /* 1.0 .. 3.2 — wide range of form size */
-    state.warp = 1.5 + rnd() * 7.0;                   /* 1.5 .. 8.5 — calm to violent */
-    state.grain = 0.01 + rnd() * 0.06;
-    state.speed = 0.6 + rnd() * 0.5;                  /* 0.6 .. 1.1 — always lively: clearly moving, not frantic */
+    if (useCustom){ state.pal = 8; }
+    else { state.pal = Math.floor(rnd() * 8); }
     /* surface: mostly smooth, but genuinely vary screen / pixelate / halftone */
     var surf = rnd();
     if (surf < 0.55){ state.screen = 0; state.pixel = 1; state.dots = 0; }                                 /* smooth */
@@ -2599,14 +2646,19 @@ function randomPattern(){
     else if (surf < 0.90){ state.screen = 1; state.pixel = 4 + Math.floor(rnd() * 16); state.dots = 0; }   /* hex */
     else if (surf < 0.96){ state.screen = 2; state.pixel = 6 + Math.floor(rnd() * 16); state.dots = 0; }   /* ascii */
     else { state.screen = 3; state.pixel = 4 + Math.floor(rnd() * 6); state.dots = 0; state.thresh = 0.40 + rnd() * 0.20; }  /* dither */
-    state.dot = 6 + Math.floor(rnd() * 14);
     key = state.field + '|' + state.pal + '|' + state.screen + '|' + state.dots + '|' + (state.pixel > 1 ? 'p' : 's');
     tries++;
-    /* reject if we've seen this look recently OR it reuses the last engine — so every
-       shuffle lands on a clearly different field + colour + surface combination */
-  } while ((recentKeys.indexOf(key) !== -1 || state.field === lastField) && tries < 24);
+    /* the bag already guarantees a fresh engine — reject only recent look repeats */
+  } while (recentKeys.indexOf(key) !== -1 && tries < 24);
   recentKeys.push(key); if (recentKeys.length > 14){ recentKeys.shift(); }
   lastField = state.field;
+  /* #2 scale/warp from this engine's sweet spot */
+  var T = FIELD_TUNE[state.field] || [1.0, 3.0, 1.5, 8.0];
+  state.scale = T[0] + rnd() * (T[1] - T[0]);
+  state.warp = T[2] + rnd() * (T[3] - T[2]);
+  state.grain = 0.01 + rnd() * 0.06;
+  state.speed = 0.6 + rnd() * 0.5;                  /* 0.6 .. 1.1 — always lively: clearly moving, not frantic */
+  state.dot = 6 + Math.floor(rnd() * 14);
   /* advance the golden sequence and map to the 3..92 seed band — a low-discrepancy
      hop, so successive seeds never cluster or repeat (maximally distinct each time) */
   seedPhase = (seedPhase + GOLDEN) % 1;
