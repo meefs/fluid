@@ -812,22 +812,6 @@
   </section>
 
   <section>
-    <div class="sec-title">Text — your words in living colour</div>
-    <div class="row gap" style="align-items:center">
-      <input id="textInput" class="textfield" style="flex:1;min-width:0" type="text" maxlength="48" placeholder="Type a word or name…" aria-label="Text to fill with the pattern" autocomplete="off" spellcheck="false">
-      <button id="textClear" type="button" class="textclear" title="Remove text — back to full art" aria-label="Remove text">&times;</button>
-    </div>
-    <div id="fontGrid" class="fontgrid" role="group" aria-label="Font"></div>
-    <p class="cnote" style="margin:8px 0 0">Fills the letters with the living pattern — clear to turn off. Tip: pick a wide frame in Size for a banner.</p>
-    <div class="row gap" style="margin-top:10px;align-items:center">
-      <span class="exGroupLabel" style="margin:0 2px 0 0">Background</span>
-      <input class="swatch" id="maskBgInput" type="color" value="#0d0d10" aria-label="Text background colour">
-      <button type="button" id="maskBgDark" aria-pressed="true">Dark</button>
-      <button type="button" id="maskBgLight" aria-pressed="false">Light</button>
-    </div>
-  </section>
-
-  <section>
     <div class="sec-title">01 — Size</div>
     <div class="ardial">
       <input id="arSlider" type="range" min="0" max="5" step="1" value="2" aria-label="Aspect ratio">
@@ -960,6 +944,22 @@
       <summary>More sizes</summary>
       <div class="exgroups" id="exportGroups"></div>
     </details>
+  </section>
+
+  <section>
+    <div class="sec-title">Text — your words in living colour</div>
+    <div class="row gap" style="align-items:center">
+      <input id="textInput" class="textfield" style="flex:1;min-width:0" type="text" maxlength="48" placeholder="Type a word or name…" aria-label="Text to fill with the pattern" autocomplete="off" spellcheck="false">
+      <button id="textClear" type="button" class="textclear" title="Remove text — back to full art" aria-label="Remove text">&times;</button>
+    </div>
+    <div id="fontGrid" class="fontgrid" role="group" aria-label="Font"></div>
+    <p class="cnote" style="margin:8px 0 0">Fills the letters with the living pattern — clear to turn off. Tip: pick a wide frame in Size for a banner.</p>
+    <div class="row gap" style="margin-top:10px;align-items:center">
+      <span class="exGroupLabel" style="margin:0 2px 0 0">Background</span>
+      <input class="swatch" id="maskBgInput" type="color" value="#0d0d10" aria-label="Text background colour">
+      <button type="button" id="maskBgDark" aria-pressed="true">Dark</button>
+      <button type="button" id="maskBgLight" aria-pressed="false">Light</button>
+    </div>
   </section>
 
   <footer>Free forever — all computation happens on your device.
