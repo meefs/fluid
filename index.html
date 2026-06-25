@@ -776,7 +776,10 @@
     <div class="metaLine">Fluid v3 · updated 25 Jun 2026</div>
     <div class="signature">Made by <a href="https://themasterofnone.xyz" target="_blank" rel="noopener">TheMasterOfNone</a></div>
   </div>
-  <!-- Vibe (Pro · BYOK) — describe a mood, the user's own OpenAI key turns it into a piece -->
+  <!-- Vibe (Pro · BYOK) — HIDDEN 2026-06-26: reworking as the keyless browser-based vibe
+       (fluid-vibe). Markup commented out so it's off the UI but trivially restorable; the
+       guarded vibe JS below safely no-ops while these elements are absent. -->
+  <!--
   <section>
     <div class="sec-title">✨ Vibe <span class="vbadge">PRO</span></div>
     <div class="row gap">
@@ -793,6 +796,7 @@
       </div>
     </div>
   </section>
+  -->
 
   <!-- quick-start templates at the top — collapsed by default, expand to pick one -->
   <section data-collapsed>
@@ -1016,7 +1020,7 @@
     </details>
   </section>
 
-  <section>
+  <section data-collapsed>
     <div class="sec-title">Text — your words in living colour</div>
     <div class="row gap" style="align-items:center">
       <input id="textInput" class="textfield" style="flex:1;min-width:0" type="text" maxlength="48" placeholder="Type a word or name…" aria-label="Text to fill with the pattern" autocomplete="off" spellcheck="false">
