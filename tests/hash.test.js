@@ -47,7 +47,7 @@ function makeCtx() {
   return sandbox;
 }
 
-const BASE = { speed: 0.75, scale: 1.8, warp: 3.9, grain: 0.3, pixel: 15, dot: 13, dots: 1, pal: 4, seed: 37.14, liq: 0.8, mix: 0.85, ar: 1.7778, field: 0, screen: 0, sym: 0, panX: 0, panY: 0, thresh: 0.5, cols: null };
+const BASE = { speed: 0.75, scale: 1.8, warp: 3.9, grain: 0.3, pixel: 15, dot: 13, dots: 1, pal: 4, seed: 37.14, liq: 0.8, mix: 0.85, ar: 1.7778, field: 0, screen: 0, sym: 0, field2: 0, blend: 0, layerMix: 0, panX: 0, panY: 0, thresh: 0.5, cols: null };
 
 function roundtrip(overrides) {
   const enc = makeCtx();
@@ -80,6 +80,15 @@ describe('share-hash round-trip (buildHash <-> parseHash)', () => {
     }
     // sym=0 is the default and must trim away (no hash bloat for the common case)
     assert.ok(roundtrip({ sym: 0 }).hash.split(',').length <= 16, 'sym=0 must not pad the hash');
+  });
+
+  it('Layers (2nd engine / blend / mix) round-trip via slots [25-27]', () => {
+    const { after } = roundtrip({ field2: 7, blend: 2, layerMix: 0.5 });
+    assert.strictEqual(after.field2, 7, 'field2 (2nd engine)');
+    assert.strictEqual(after.blend, 2, 'blend mode');
+    assert.ok(Math.abs(after.layerMix - 0.5) < 0.011, 'layerMix drifted: ' + after.layerMix);
+    // no layer (mix 0) must trim away — no hash bloat for the common single-engine case
+    assert.ok(roundtrip({ layerMix: 0 }).hash.split(',').length <= 16, 'mix=0 must not pad the hash');
   });
 
   it('every screen 0..3 round-trips', () => {

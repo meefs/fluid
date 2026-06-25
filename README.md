@@ -24,6 +24,7 @@ One HTML file. No build step. No backend state. No runtime dependencies.
 
 - WebGL1 fragment-shader renderer with 13 field engines, including a quasicrystal and a hexagonal honeycomb.
 - Kaleidoscope symmetry modifier: fold any field into an N-fold radial mandala.
+- Layers: composite a second engine over the first with multiply / screen / add / difference / overlay blends.
 - Square, hex, ASCII, halftone, and ordered-dither surface modes.
 - Preset palettes plus shareable custom four-stop gradients.
 - Optional image melt: uploaded image luminance drives the field.
