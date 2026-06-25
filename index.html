@@ -1111,6 +1111,13 @@ function hexToRgb01(h){ h = h.replace('#',''); return [parseInt(h.substr(0,2),16
 function rgb01ToHex(c){ function p(x){ var s = Math.max(0,Math.min(255,Math.round(x*255))).toString(16); return s.length<2?'0'+s:s; } return '#'+p(c[0])+p(c[1])+p(c[2]); }
 function rgb01ToCss(c){ return 'rgb(' + Math.round(c[0]*255) + ',' + Math.round(c[1]*255) + ',' + Math.round(c[2]*255) + ')'; }
 function paletteAccent(pi){ return pi === 7 ? [0.82,0.84,0.86] : (pi === 8 ? state.cols[3] : ((PALETTES_RGB[pi] || PALETTES_RGB[0])[3])); }
+/* a BRIGHT gradient swatch for a palette button — the 3 vivid/light stops (skip the near-black
+   base) so the colours actually show instead of a dark noise-render preview. */
+function paletteSwatch(pi){
+  var s = pi === 7 ? [[0.16,0.17,0.20],[0.55,0.57,0.62],[0.78,0.80,0.84],[0.94,0.96,0.99]]
+        : pi === 8 ? (state.cols || PALETTES_RGB[0]) : (PALETTES_RGB[pi] || PALETTES_RGB[0]);
+  return 'linear-gradient(135deg, ' + rgb01ToCss(s[1]) + ', ' + rgb01ToCss(s[2]) + ', ' + rgb01ToCss(s[3]) + ')';
+}
 
 /* ---------- state ---------- */
 var state = {
@@ -2460,6 +2467,7 @@ function syncControls(){
     var on = palId === state.pal;
     pals[i].className = 'fieldBtn palBtn' + (on ? ' on' : '');
     pals[i].style.setProperty('--label-ink', rgb01ToCss(paletteAccent(palId)));
+    pals[i].style.backgroundImage = paletteSwatch(palId);
     pals[i].setAttribute('aria-pressed', on ? 'true' : 'false');
   }
   /* reflect the current 4 colours into the swatch pickers + the note */
@@ -4472,14 +4480,8 @@ function thumbSpecs(){
     jobs.push({ el: dots, ov: { field:0, screen:0, pixel:1, dots:1, dot:9, scale:1.5, warp:5.0,
       grain:0.02, seed:60, t:1.1, hasTex:0 } });
   }
-  var pb = document.querySelectorAll('.palBtn');
-  for (i = 0; i < pb.length; i++){
-    var pal = parseInt(pb[i].getAttribute('data-pal'), 10);
-    /* preset palettes (0-7) never change -> render once; custom (8) tracks the swatches */
-    if (pal !== 8 && presetThumbsDone){ continue; }
-    jobs.push({ el: pb[i], pal: pal, ov: { field:0, screen:0, pixel:8, dots:0, dot:10, scale:1.6,
-      warp:5.0, grain:0.02, seed:39, t:1.25, hasTex:0, pal: pal } });
-  }
+  /* palette buttons get a vivid CSS gradient swatch (set in syncControls), not a noise render —
+     the noise field is mid/dark-biased so the old previews read dark. */
   return jobs;
 }
 function applyThumbState(src){ for (var i = 0; i < THUMB_KEYS.length; i++){ state[THUMB_KEYS[i]] = src[THUMB_KEYS[i]]; } }
