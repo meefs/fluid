@@ -47,7 +47,7 @@ function makeCtx() {
   return sandbox;
 }
 
-const BASE = { speed: 0.75, scale: 1.8, warp: 3.9, grain: 0.3, pixel: 15, dot: 13, dots: 1, pal: 4, seed: 37.14, liq: 0.8, mix: 0.85, ar: 1.7778, field: 0, screen: 0, sym: 0, field2: 0, blend: 0, layerMix: 0, panX: 0, panY: 0, thresh: 0.5, cols: null };
+const BASE = { speed: 0.75, scale: 1.8, warp: 3.9, grain: 0.3, pixel: 15, dot: 13, dots: 1, pal: 4, seed: 37.14, liq: 0.8, mix: 0.85, ar: 1.7778, field: 0, screen: 0, sym: 0, field2: 0, blend: 0, layerMix: 0, material: 0, panX: 0, panY: 0, thresh: 0.5, cols: null };
 
 function roundtrip(overrides) {
   const enc = makeCtx();
@@ -92,7 +92,13 @@ describe('share-hash round-trip (buildHash <-> parseHash)', () => {
   });
 
   it('every screen 0..3 round-trips', () => {
-    for (let s = 0; s <= 3; s++) assert.strictEqual(roundtrip({ screen: s }).after.screen, s, 'screen ' + s);
+    for (let s = 0; s <= 4; s++) assert.strictEqual(roundtrip({ screen: s }).after.screen, s, 'screen ' + s);
+  });
+
+  it('every material finish 0..4 round-trips via slot [28]', () => {
+    for (let m = 0; m <= 4; m++) assert.strictEqual(roundtrip({ material: m }).after.material, m, 'material ' + m);
+    // no finish (material 0) is the default and must trim away — no hash bloat
+    assert.ok(roundtrip({ material: 0 }).hash.split(',').length <= 16, 'material=0 must not pad the hash');
   });
 
   it('non-default dither threshold round-trips via the trailing slot', () => {

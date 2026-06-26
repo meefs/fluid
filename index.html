@@ -958,6 +958,7 @@
         <input id="layerMix" type="range" min="0" max="1" step="0.02" value="0">
       </div>
     </div>
+    <button id="layerOffBtn" type="button" style="margin-top:6px;width:100%">Remove 2nd layer</button>
     <p class="cnote" style="margin:8px 0 0">Mix 0 = single engine. Raise it to composite the 2nd engine over the 1st — try Multiply or Screen.</p>
   </section>
 
@@ -986,7 +987,16 @@
       <button class="fieldBtn screenBtn" data-screen="1" title="Hex" aria-label="Hex" aria-pressed="false"><span>Hex</span></button>
       <button class="fieldBtn screenBtn" data-screen="2" title="ASCII" aria-label="ASCII" aria-pressed="false"><span>ASCII</span></button>
       <button class="fieldBtn screenBtn" data-screen="3" title="Dither" aria-label="Dither" aria-pressed="false"><span>Dither</span></button>
+      <button class="fieldBtn screenBtn" data-screen="4" title="Glitch" aria-label="Glitch" aria-pressed="false"><span>Glitch</span></button>
       <button id="dotsBtn" class="fieldBtn on" title="Halftone" aria-label="Halftone" aria-pressed="true"><span>Halftone</span></button>
+    </div>
+    <div class="exGroupLabel">Finish</div>
+    <div class="fieldgrid surfacegrid">
+      <button class="fieldBtn materialBtn on" data-material="0" title="No finish" aria-label="No finish" aria-pressed="true"><span>None</span></button>
+      <button class="fieldBtn materialBtn" data-material="1" title="Glass" aria-label="Glass" aria-pressed="false"><span>Glass</span></button>
+      <button class="fieldBtn materialBtn" data-material="2" title="Metal" aria-label="Metal" aria-pressed="false"><span>Metal</span></button>
+      <button class="fieldBtn materialBtn" data-material="3" title="Sand" aria-label="Sand" aria-pressed="false"><span>Sand</span></button>
+      <button class="fieldBtn materialBtn" data-material="4" title="Liquid" aria-label="Liquid" aria-pressed="false"><span>Liquid</span></button>
     </div>
   </section>
 
@@ -1156,7 +1166,7 @@ var state = {
   seed: 3 + Math.random()*89,
   liq:0.8, mix:0.85,
   ar:1,
-  field:0, screen:0, sym:0,
+  field:0, screen:0, sym:0, material:0,
   field2:0, blend:0, layerMix:0,
   hasTex:0, texAspect:1,
   split:0,
@@ -1177,6 +1187,7 @@ var VSRC = [
 ].join('\n');
 
 var FSRC = [
+  '#extension GL_OES_standard_derivatives : enable',
   'precision highp float;',
   'uniform vec2  u_res;',
   'uniform float u_time;',
@@ -1205,6 +1216,7 @@ var FSRC = [
   'uniform int   u_blend;',
   'uniform float u_layerMix;',
   'uniform int   u_screen;',
+  'uniform int   u_material;',
   'uniform sampler2D u_glyph;',
   'uniform sampler2D u_mask;',    /* text/logo mask — field shows inside white, u_maskBg outside */
   'uniform float u_hasMask;',
@@ -1479,6 +1491,28 @@ var FSRC = [
   '  else { r = b; }                                                        /* 0 = normal */',
   '  return mix(a, r, amt);',
   '}',
+  '/* material finish: treat the field as a height map (screen-space gradient -> normal) and',
+  '   re-light the palette colour as glass / metal / sand / liquid. mat 0 = off. */',
+  'vec3 shadeMaterial(int mat, vec3 base, vec3 N){',
+  '  vec3 L = normalize(vec3(0.4, 0.7, 0.6));',
+  '  vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));',
+  '  float ndl = max(dot(N, L), 0.0);',
+  '  float ndh = max(dot(N, H), 0.0);',
+  '  float fres = pow(1.0 - max(N.z, 0.0), 2.5);',
+  '  vec3 col = base;',
+  '  if (mat == 1){          /* glass — dark refractive body, bright fresnel rim + sharp spec */',
+  '    col = base * (0.35 + 0.25 * ndl) + fres * (base + 0.7) + pow(ndh, 80.0) * 1.5;',
+  '  } else if (mat == 2){   /* metal — chrome: env reflection (sky/ground by N.y) + hot spec */',
+  '    vec3 env = mix(base * 0.15 + 0.02, base * 0.7 + 0.55, smoothstep(-0.6, 0.6, N.y));',
+  '    col = env + pow(ndh, 40.0) * 2.0 + fres * 0.5;',
+  '  } else if (mat == 3){   /* sand — matte grain + soft ambient occlusion, no spec */',
+  '    float ao = clamp(0.5 + 0.5 * N.z, 0.0, 1.0);',
+  '    col = base * (0.4 + 0.6 * ndl) * ao + (hash(gl_FragCoord.xy * 1.91) - 0.5) * 0.18;',
+  '  } else if (mat == 4){   /* liquid — wet sheen: glossy spec + fresnel highlights */',
+  '    col = base * (0.5 + 0.4 * ndl) + pow(ndh, 28.0) * 1.3 + fres * 0.4 * (base + 0.3);',
+  '  }',
+  '  return col;',
+  '}',
   'void main(){',
   '  /* 0 - before/after: left of the split shows the untouched source */',
   '  if (u_hasTex > 0.5 && u_split > 0.001 && gl_FragCoord.x < u_res.x * u_split){',
@@ -1503,6 +1537,9 @@ var FSRC = [
   '  } else if (u_screen == 3){',
   '    float cd = max(u_pixel, 3.0);',
   '    fc = (floor(fc / cd) + 0.5) * cd;',
+  '  } else if (u_screen == 4){',
+  '    float cg = max(u_pixel, 4.0);',
+  '    fc = (floor(fc / cg) + 0.5) * cg;',
   '  } else if (u_pixel > 1.5){',
   '    fc = (floor(fc / u_pixel) + 0.5) * u_pixel;',
   '  }',
@@ -1576,6 +1613,11 @@ var FSRC = [
   '  else           { col = ramp4(f, u_c0, u_c1, u_c2, u_c3); }',
   '  /* soft highlight bloom for a premium glow */',
   '  col += smoothstep(0.72, 1.0, f) * 0.12;',
+  '  /* 4b - material finish: field gradient -> normal, re-light as glass/metal/sand/liquid */',
+  '  if (u_material > 0){',
+  '    vec2 grd = vec2(dFdx(f), dFdy(f)) * u_res.y * 0.06;',
+  '    col = shadeMaterial(u_material, col, normalize(vec3(-grd, 1.0)));',
+  '  }',
   '',
   '  /* 5 - halftone in real (un-pixelated) coords (square screen only) */',
   '  if (u_dots > 0.5 && u_screen == 0){',
@@ -1601,6 +1643,17 @@ var FSRC = [
   '    float cd = max(u_pixel, 3.0);',
   '    float bit = step(bayer8(gl_FragCoord.xy / cd), clamp(f + (u_dither - 0.5), 0.0, 1.0));',
   '    col = mix(u_c1, u_c3, bit);',
+  '  }',
+  '',
+  '  /* 5d - glitch: chromatic-aberration on the field contours, black elsewhere (RGB channel split) */',
+  '  if (u_screen == 4){',
+  '    float lev = clamp(0.5 + (u_dither - 0.5) * 0.6, 0.18, 0.82);  /* Threshold shifts which contour shows */',
+  '    float bw = 0.018;                                            /* narrow band -> thin sparse contours on black */',
+  '    col = vec3(',
+  '      1.0 - smoothstep(bw, bw * 2.6, abs(f - (lev - 0.05))),',
+  '      1.0 - smoothstep(bw, bw * 2.6, abs(f - lev)),',
+  '      1.0 - smoothstep(bw, bw * 2.6, abs(f - (lev + 0.05)))',
+  '    );',
   '  }',
   '',
   '  /* 6 - grain + vignette */',
@@ -1667,6 +1720,7 @@ function compile(type, src){
 }
 var U = {}, tex = null;
 if (gl){
+  gl.getExtension('OES_standard_derivatives');   /* dFdx/dFdy for the material finish (WebGL1) */
   var prog = gl.createProgram();
   gl.attachShader(prog, compile(gl.VERTEX_SHADER, VSRC));
   gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FSRC));
@@ -1682,7 +1736,7 @@ if (gl){
 
   ['u_res','u_time','u_seed','u_scale','u_warp','u_sym','u_pixel','u_dots','u_dot','u_dither','u_grain',
    'u_pal','u_c0','u_c1','u_c2','u_c3','u_tex','u_hasTex','u_texAspect','u_liq','u_mix','u_split',
-   'u_field','u_field2','u_blend','u_layerMix','u_screen','u_glyph','u_pan','u_mouse','u_mouseAmt','u_rec','u_mask','u_hasMask','u_maskBg'].forEach(function(n){
+   'u_field','u_field2','u_blend','u_layerMix','u_screen','u_material','u_glyph','u_pan','u_mouse','u_mouseAmt','u_rec','u_mask','u_hasMask','u_maskBg'].forEach(function(n){
     U[n] = gl.getUniformLocation(prog, n);
   });
 
@@ -2180,6 +2234,7 @@ function render(k, tgt){
   gl.uniform1i(U.u_blend, state.blend || 0);
   gl.uniform1f(U.u_layerMix, state.layerMix || 0);
   gl.uniform1i(U.u_screen, state.screen);
+  gl.uniform1i(U.u_material, state.material || 0);
   gl.uniform2f(U.u_pan, tex ? state.panX : 0, tex ? state.panY : 0);
   gl.uniform2f(U.u_mouse, mouse.x, mouse.y);
   gl.uniform1f(U.u_mouseAmt, exporting ? 0 : mouse.amt);
@@ -2349,6 +2404,8 @@ var field2Sel = document.getElementById('field2Sel');
 var blendSel = document.getElementById('blendSel');
 if (field2Sel){ field2Sel.addEventListener('change', function(){ state.field2 = parseInt(field2Sel.value, 10) || 0; markLook(null); requestRender(); persist(); }); }
 if (blendSel){ blendSel.addEventListener('change', function(){ state.blend = parseInt(blendSel.value, 10) || 0; markLook(null); requestRender(); persist(); }); }
+var layerOffBtn = document.getElementById('layerOffBtn');
+if (layerOffBtn){ layerOffBtn.addEventListener('click', function(){ state.field2 = 0; state.blend = 0; state.layerMix = 0; markLook(null); syncControls(); requestRender(); persist(); setStatus('LAYER REMOVED — back to a single engine'); }); }
 bindSlider('pixel', 'pixel');
 bindSlider('dot', 'dot');
 bindSlider('thresh', 'thresh');
@@ -2523,6 +2580,12 @@ function syncControls(){
     screens[si].className = 'fieldBtn screenBtn' + (son ? ' on' : '');
     screens[si].setAttribute('aria-pressed', son ? 'true' : 'false');
   }
+  var mats = document.querySelectorAll('.materialBtn');
+  for (var mi = 0; mi < mats.length; mi++){
+    var mon = parseInt(mats[mi].getAttribute('data-material'), 10) === (state.material || 0);
+    mats[mi].className = 'fieldBtn materialBtn' + (mon ? ' on' : '');
+    mats[mi].setAttribute('aria-pressed', mon ? 'true' : 'false');
+  }
   if (typeof AR_LIST !== 'undefined'){
     var ai = arIndex(state.ar), arS = document.getElementById('arSlider'), arT = document.getElementById('arTicks');
     if (arS){ arS.value = ai; }
@@ -2636,7 +2699,15 @@ Array.prototype.forEach.call(document.querySelectorAll('.screenBtn'), function(b
     state.screen = parseInt(b.getAttribute('data-screen'), 10);
     markLook(null);
     syncControls();
-    setStatus(['SQUARE SCREEN — pixels + optional dots','HEX SCREEN — honeycomb mosaic','ASCII SCREEN — luminance maps to glyphs','DITHER SCREEN — Bayer 2-tone; tune Threshold'][state.screen]);
+    setStatus(['SQUARE SCREEN — pixels + optional dots','HEX SCREEN — honeycomb mosaic','ASCII SCREEN — luminance maps to glyphs','DITHER SCREEN — Bayer 2-tone; tune Threshold','GLITCH SCREEN — RGB-split contours; Threshold = density'][state.screen]);
+  });
+});
+Array.prototype.forEach.call(document.querySelectorAll('.materialBtn'), function(b){
+  b.addEventListener('click', function(){
+    state.material = parseInt(b.getAttribute('data-material'), 10);
+    markLook(null);
+    syncControls();
+    setStatus(['NO FINISH — flat colour','GLASS — refractive rim + sheen','METAL — chrome reflection','SAND — matte grain','LIQUID — wet gloss'][state.material]);
   });
 });
 function applyAspect(){
@@ -2745,7 +2816,8 @@ function randomPattern(){
     else if (surf < 0.84){ state.screen = 0; state.pixel = 1; state.dots = 1; }                            /* halftone on smooth */
     else if (surf < 0.90){ state.screen = 1; state.pixel = 4 + Math.floor(rnd() * 16); state.dots = 0; }   /* hex */
     else if (surf < 0.96){ state.screen = 2; state.pixel = 6 + Math.floor(rnd() * 16); state.dots = 0; }   /* ascii */
-    else { state.screen = 3; state.pixel = 4 + Math.floor(rnd() * 6); state.dots = 0; state.thresh = 0.40 + rnd() * 0.20; }  /* dither */
+    else if (surf < 0.98){ state.screen = 3; state.pixel = 4 + Math.floor(rnd() * 6); state.dots = 0; state.thresh = 0.40 + rnd() * 0.20; }  /* dither */
+    else { state.screen = 4; state.pixel = 4 + Math.floor(rnd() * 8); state.dots = 0; state.thresh = 0.30 + rnd() * 0.40; }  /* glitch */
     key = state.field + '|' + state.pal + '|' + state.screen + '|' + state.dots + '|' + (state.pixel > 1 ? 'p' : 's');
     tries++;
     /* the bag already guarantees a fresh engine — reject only recent look repeats */
@@ -3289,6 +3361,11 @@ function buildHash(embedFlag){
     while (a.length < 25){ a.push(0); }
     a.push(state.field2 || 0, state.blend || 0, Math.round((state.layerMix || 0) * 100));
   }
+  /* [28] material finish (1 glass / 2 metal / 3 sand / 4 liquid) — only when set; pads [19..27] */
+  if ((state.material || 0) > 0){
+    while (a.length < 28){ a.push(0); }
+    a.push(Math.round(state.material));
+  }
   var minLen = state.pal === 8 ? 24 : 12;
   while (a.length > minLen && a[a.length - 1] === 0){ a.pop(); }
   return '#p=' + a.join(',');
@@ -3317,7 +3394,7 @@ function parseHash(src){
   pendingPreset = n.length > 12 ? Math.min(PRESETS.length, Math.max(0, Math.round(n[12]))) : 0;
   EMBED = n.length > 13 && Math.round(n[13]) === 1;
   state.field = n.length > 14 ? Math.min(12, Math.max(0, Math.round(n[14]))) : 0;
-  state.screen = n.length > 15 ? Math.min(3, Math.max(0, Math.round(n[15]))) : 0;
+  state.screen = n.length > 15 ? Math.min(4, Math.max(0, Math.round(n[15]))) : 0;
   state.panX = n.length > 16 ? Math.max(-0.5, Math.min(0.5, n[16])) : 0;
   state.panY = n.length > 17 ? Math.max(-0.5, Math.min(0.5, n[17])) : 0;
   state.sym = n.length > 18 ? Math.min(12, Math.max(0, Math.round(n[18]))) : 0;
@@ -3331,6 +3408,7 @@ function parseHash(src){
   state.field2 = n.length > 25 ? Math.min(12, Math.max(0, Math.round(n[25]))) : 0;
   state.blend = n.length > 26 ? Math.min(5, Math.max(0, Math.round(n[26]))) : 0;
   state.layerMix = n.length > 27 ? Math.max(0, Math.min(1, n[27] / 100)) : 0;
+  state.material = n.length > 28 ? Math.min(4, Math.max(0, Math.round(n[28]))) : 0;
   return true;
 }
 function copyText(txt, okMsg, failMsg){
@@ -3578,22 +3656,22 @@ function buildStandaloneHTML(){
     dot:Math.round(state.dot), thresh:+state.thresh.toFixed(3), grain:+state.grain.toFixed(3),
     pal:state.pal, cols:[r4(cc[0]), r4(cc[1]), r4(cc[2]), r4(cc[3])],
     field:state.field, field2:state.field2 || 0, blend:state.blend || 0,
-    layerMix:+(state.layerMix || 0).toFixed(3), screen:state.screen, seed:+state.seed.toFixed(2)
+    layerMix:+(state.layerMix || 0).toFixed(3), screen:state.screen, material:state.material || 0, seed:+state.seed.toFixed(2)
   };
   var boot =
     "var cv=document.getElementById('fluid');var gl=cv.getContext('webgl',{antialias:false})||cv.getContext('experimental-webgl');if(!gl){document.body.style.background='#0d0d10';return;}" +
     "function sh(t,s){var o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);return o;}" +
-    "var pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,VS));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,FS));gl.linkProgram(pr);gl.useProgram(pr);" +
+    "gl.getExtension('OES_standard_derivatives');var pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,VS));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,FS));gl.linkProgram(pr);gl.useProgram(pr);" +
     "var bf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);" +
     "var al=gl.getAttribLocation(pr,'a_pos');gl.enableVertexAttribArray(al);gl.vertexAttribPointer(al,2,gl.FLOAT,false,0,0);var U={};" +
-    "'u_res u_time u_seed u_scale u_warp u_sym u_pixel u_dots u_dot u_dither u_grain u_pal u_c0 u_c1 u_c2 u_c3 u_hasTex u_texAspect u_liq u_mix u_split u_field u_field2 u_blend u_layerMix u_screen u_glyph u_pan u_mouse u_mouseAmt u_rec u_mask u_hasMask u_maskBg'.split(' ').forEach(function(n){U[n]=gl.getUniformLocation(pr,n);});" +
+    "'u_res u_time u_seed u_scale u_warp u_sym u_pixel u_dots u_dot u_dither u_grain u_pal u_c0 u_c1 u_c2 u_c3 u_hasTex u_texAspect u_liq u_mix u_split u_field u_field2 u_blend u_layerMix u_screen u_material u_glyph u_pan u_mouse u_mouseAmt u_rec u_mask u_hasMask u_maskBg'.split(' ').forEach(function(n){U[n]=gl.getUniformLocation(pr,n);});" +
     "function dt(u){var t=gl.createTexture();gl.activeTexture(gl.TEXTURE0+u);gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([0,0,0,255]));gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);}dt(0);dt(2);" +
     "(function(){var ch=' .:-=+*#%@',ce=28;var c=document.createElement('canvas');c.width=ce*ch.length;c.height=ce;var x=c.getContext('2d');x.fillStyle='#000';x.fillRect(0,0,c.width,c.height);x.fillStyle='#fff';x.font='bold '+Math.round(ce*0.82)+'px monospace';x.textAlign='center';x.textBaseline='middle';for(var i=0;i<ch.length;i++)x.fillText(ch.charAt(i),i*ce+ce/2,ce/2+1);var t=gl.createTexture();gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,t);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);})();" +
     "gl.activeTexture(gl.TEXTURE0);gl.uniform1i(U.u_glyph,1);gl.uniform1i(U.u_mask,2);" +
     "gl.uniform1f(U.u_seed,P.seed);gl.uniform1f(U.u_scale,P.scale);gl.uniform1f(U.u_warp,P.warp);gl.uniform1f(U.u_sym,P.sym);gl.uniform1f(U.u_dots,P.dots);gl.uniform1f(U.u_dither,P.thresh);gl.uniform1f(U.u_grain,P.grain);gl.uniform1i(U.u_pal,P.pal);" +
     "gl.uniform3f(U.u_c0,P.cols[0][0],P.cols[0][1],P.cols[0][2]);gl.uniform3f(U.u_c1,P.cols[1][0],P.cols[1][1],P.cols[1][2]);gl.uniform3f(U.u_c2,P.cols[2][0],P.cols[2][1],P.cols[2][2]);gl.uniform3f(U.u_c3,P.cols[3][0],P.cols[3][1],P.cols[3][2]);" +
     "gl.uniform1f(U.u_hasTex,0);gl.uniform1f(U.u_texAspect,1);gl.uniform1f(U.u_liq,0);gl.uniform1f(U.u_mix,0);gl.uniform1f(U.u_split,0);" +
-    "gl.uniform1i(U.u_field,P.field);gl.uniform1i(U.u_field2,P.field2);gl.uniform1i(U.u_blend,P.blend);gl.uniform1f(U.u_layerMix,P.layerMix);gl.uniform1i(U.u_screen,P.screen);" +
+    "gl.uniform1i(U.u_field,P.field);gl.uniform1i(U.u_field2,P.field2);gl.uniform1i(U.u_blend,P.blend);gl.uniform1f(U.u_layerMix,P.layerMix);gl.uniform1i(U.u_screen,P.screen);gl.uniform1i(U.u_material,P.material);" +
     "gl.uniform2f(U.u_pan,0,0);gl.uniform2f(U.u_mouse,0.5,0.5);gl.uniform1f(U.u_mouseAmt,0);gl.uniform1f(U.u_rec,0);gl.uniform1f(U.u_hasMask,0);gl.uniform3f(U.u_maskBg,0.05,0.05,0.06);" +
     "var dpr=Math.min(window.devicePixelRatio||1,2);function rs(){var w=Math.round(cv.clientWidth*dpr),h=Math.round(cv.clientHeight*dpr);if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;}gl.viewport(0,0,cv.width,cv.height);gl.uniform2f(U.u_res,cv.width,cv.height);gl.uniform1f(U.u_pixel,P.pixel<=1.5?1.0:P.pixel*dpr);gl.uniform1f(U.u_dot,P.dot*dpr);}window.addEventListener('resize',rs);rs();" +
     "var st=null;function fr(now){if(st===null)st=now;gl.uniform1f(U.u_time,(now-st)*0.001*P.speed);gl.drawArrays(gl.TRIANGLES,0,3);requestAnimationFrame(fr);}requestAnimationFrame(fr);";
